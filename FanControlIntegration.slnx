@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FanControlBridge.Core/FanControlBridge.Core.csproj" />
+    <Project Path="src/FanControl.Mqtt/FanControl.Mqtt.csproj" />
+    <Project Path="third_party/Waterforce/FanControl.GigabyteWaterforce.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FanControlBridge.Tests/FanControlBridge.Tests.csproj" />
+    <Project Path="tests/Waterforce.Tests/Waterforce.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Waterforce.Validation/Waterforce.Validation.csproj" />
+    <Project Path="tools/FanControlBridge.Probe/FanControlBridge.Probe.csproj" />
+  </Folder>
+</Solution>

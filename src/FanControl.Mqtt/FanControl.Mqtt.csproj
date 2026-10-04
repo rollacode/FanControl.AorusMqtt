@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0-windows</TargetFramework><AssemblyName>FanControl.Mqtt</AssemblyName><CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../FanControlBridge.Core/FanControlBridge.Core.csproj"/>
+    <Reference Include="FanControl.Plugins"><HintPath>../../.artifacts/runtime/FanControl.Plugins.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="LibreHardwareMonitorLib"><HintPath>../../.artifacts/runtime/LibreHardwareMonitorLib.dll</HintPath><Private>false</Private></Reference>
+    <PackageReference Include="Fody" Version="6.9.3" PrivateAssets="all"/>
+    <PackageReference Include="Costura.Fody" Version="6.2.0" PrivateAssets="all"/>
+  </ItemGroup>
+</Project>

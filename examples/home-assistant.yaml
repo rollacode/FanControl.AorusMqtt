@@ -1,0 +1,28 @@
+# Merge under your existing mqtt section; change the prefix/unique_id for each PC.
+# This example does not create any schedule or automation.
+mqtt:
+  - select:
+      name: "Fan Control profile"
+      unique_id: fancontrol_aorus_profile
+      icon: mdi:fan
+      command_topic: fancontrol/aorus/profile/set
+      state_topic: fancontrol/aorus/state
+      value_template: >-
+        {% set mode = value_json.bridge.observedProfile | default(none) %}
+        {{ mode if mode in ['Performance', 'Balanced', 'Night'] else 'None' }}
+      options:
+        - Performance
+        - Balanced
+        - Night
+      optimistic: false
+      retain: false
+      qos: 1
+      availability_mode: all
+      availability:
+        - topic: fancontrol/aorus/availability
+          payload_available: online
+          payload_not_available: offline
+        - topic: fancontrol/aorus/state
+          value_template: "{{ 'online' if value_json.controlReady | default(false) == true else 'offline' }}"
+          payload_available: online
+          payload_not_available: offline

@@ -1,0 +1,30 @@
+name: Build and mock tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.x
+      - name: Obtain build-only Fan Control SDK
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/Rem0o/FanControl.Releases/releases/download/V282/FanControl_282_net_10_0.zip'
+          New-Item -ItemType Directory .artifacts/runtime,third_party/Waterforce/lib -Force | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile .artifacts/fancontrol.zip
+          Expand-Archive -LiteralPath .artifacts/fancontrol.zip -DestinationPath .artifacts/runtime -Force
+          Copy-Item .artifacts/runtime/FanControl.Plugins.dll third_party/Waterforce/lib/FanControl.Plugins.dll
+      - name: Build and test without hardware
+        shell: pwsh
+        run: ./scripts/build.ps1

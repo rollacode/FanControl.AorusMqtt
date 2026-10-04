@@ -1,0 +1,15 @@
+.artifacts/
+.local/
+**/bin/
+**/obj/
+**/*.user
+**/*.dll
+**/*.exe
+**/*.dpapi
+**/*.pfx
+**/*.key
+**/FodyWeavers.xsd
+**/settings.json
+**/mqtt-credentials.*
+**/*-receipt.json
+**/*-snapshot.json
