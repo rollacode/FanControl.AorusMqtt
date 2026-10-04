@@ -14,6 +14,7 @@ Two plugins extend the existing [Fan Control](https://github.com/Rem0o/FanContro
 
 - **Waterforce radiator control:** native curves request 400–2500 RPM; radiator and pump RPM are measured separately.
 - **Three configurations:** Performance, Balanced and Night. Assign CPU/GPU curves in Fan Control and switch locally or through MQTT.
+- **Optional Night CPU limit:** disable Turbo Boost in Night and restore the original Windows CPU policy in Performance/Balanced; [setup and limits](docs/CPU-PERFORMANCE.md).
 - **Observed state:** the reported mode follows the actual loaded native configuration, including manual changes.
 - **Telemetry:** CPU Package, available motherboard sensors, NVIDIA GPU temperature and Waterforce RPM.
 - **Protected MQTT credentials:** CurrentUser DPAPI storage, validated TLS, and a configurable topic prefix.

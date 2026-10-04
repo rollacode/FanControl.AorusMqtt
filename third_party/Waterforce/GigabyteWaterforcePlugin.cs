@@ -46,7 +46,7 @@ public sealed class GigabyteWaterforcePlugin : IPlugin2
                         status = currentDevice.Status, hardwareControlEnabled = currentDevice.FanControlEnabled, coolingCommandsSent = currentDevice.CoolingCommandsSent }));
                     File.Move(receiptPath + ".new", receiptPath, true);
                 }
-                catch (IOException) { }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
                 try { await Task.Delay(1000, cancellation); } catch (OperationCanceledException) { break; }
             }
         });

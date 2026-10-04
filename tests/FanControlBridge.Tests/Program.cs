@@ -28,6 +28,48 @@ internal static class Program
         try
         {
             var settings = new Settings();
+            Check(!settings.CpuPerformanceControlEnabled, "CPU policy writes remain opt-in for public installations");
+            var cpuPower = new FakeCpuPower();
+            var originalPower = cpuPower.ReadActive();
+            var cpuBackup = Path.Combine(folder, "cpu-original.json");
+            var cpuPolicy = new CpuPerformancePolicy(cpuPower, cpuBackup);
+            cpuPolicy.Apply("Night", 100);
+            Check(cpuPower.ReadActive() == originalPower with { Boost = 0 }, "Night disables boost for both CPU classes without lowering maximum percentage at low temperatures");
+            var cpuWrites = cpuPower.Writes;
+            cpuPolicy.Apply("Night", 100);
+            Check(cpuPower.Writes == cpuWrites, "An unchanged Night curve does not repeatedly rewrite Windows settings");
+            cpuPolicy.Apply("Night", 65);
+            Check(cpuPower.ReadActive().Maximum == 65 && cpuPower.ReadActive().MaximumClass1 == 65, "Native temperature curve caps both hybrid CPU classes");
+            cpuPolicy.Apply("Performance", 65);
+            Check(cpuPower.ReadActive() == originalPower, "Performance restores original boost and limits despite a stale queued Night value");
+            cpuPolicy.Apply("Night", 75);
+            cpuPolicy.Apply("Balanced", 75);
+            Check(cpuPower.ReadActive() == originalPower, "Balanced restores original boost and CPU maximums");
+            cpuPolicy.Apply("Night", 60);
+            var resumedPolicy = new CpuPerformancePolicy(cpuPower, cpuBackup);
+            resumedPolicy.Apply("Night", 100);
+            resumedPolicy.Restore();
+            Check(cpuPower.ReadActive() == originalPower, "Restart while Night is active preserves the pre-Night boost snapshot");
+            cpuPolicy.Apply("Night", 50);
+            cpuPolicy.Apply("Night", null);
+            Check(cpuPower.ReadActive() == originalPower, "Disabling the CPU card restores the original CPU policy");
+            cpuPolicy.Apply("Night", 70);
+            cpuPolicy.Apply(null, 70);
+            Check(cpuPower.ReadActive().Boost == 0 && cpuPower.ReadActive().Maximum == 70, "Transient native title timeout cannot re-enable boost under Night load");
+            cpuPolicy.Restore();
+            var blockedCpuBackup = Path.Combine(folder, "blocked-cpu-backup");
+            Directory.CreateDirectory(blockedCpuBackup);
+            var blockedCpuPolicy = new CpuPerformancePolicy(cpuPower, blockedCpuBackup);
+            var beforeBlockedCpuWrite = cpuPower.Writes;
+            var blockedCpuRejected = false;
+            try { blockedCpuPolicy.Apply("Night", 60); } catch (UnauthorizedAccessException) { blockedCpuRejected = true; } catch (IOException) { blockedCpuRejected = true; }
+            Check(blockedCpuRejected && cpuPower.Writes == beforeBlockedCpuWrite, "A failed original-policy snapshot cannot lead to an unbacked Windows write");
+            var invalidCpuRejected = false;
+            try { cpuPolicy.Apply("Night", float.NaN); } catch (ArgumentOutOfRangeException) { invalidCpuRejected = true; }
+            Check(invalidCpuRejected && cpuPower.ReadActive() == originalPower, "Invalid curve values are rejected before a Windows write");
+            cpuPower.NoClass1();
+            cpuPolicy.Apply("Night", 80); cpuPolicy.Restore();
+            Check(cpuPower.ReadActive().MaximumClass1 is null, "CPU policies without a second efficiency-class setting remain supported");
             Check(ConfigurationFingerprint.Canonical("{\"b\":[1.0,2],\"a\":true}") == ConfigurationFingerprint.Canonical("{ \"a\":true,\"b\":[1,2.0] }"), "Native formatting, object order and numeric spelling do not change validation");
             Check(ConfigurationFingerprint.Canonical("{\"duty\":40}") != ConfigurationFingerprint.Canonical("{\"duty\":41}") && ConfigurationFingerprint.Canonical("[1,2]") != ConfigurationFingerprint.Canonical("[2,1]"), "Real curve changes and array ordering still invalidate native configuration");
             var editablePath = Path.Combine(folder, "Night.json");
@@ -206,6 +248,14 @@ internal static class Program
         await publisher.PublishAsync(new MqttApplicationMessageBuilder().WithTopic(MqttBridge.Root + "/night/set").WithPayload("ON").Build()); await Task.Delay(100);
         Check(runtime.Calls == beforeOldToggle, "Old Night topic cannot mutate hardware");
         await publisher.DisconnectAsync(); await broker.StopAsync();
+    }
+    private sealed class FakeCpuPower : ICpuPowerSettings
+    {
+        private CpuPowerValues values = new(Guid.NewGuid(), 2, 100, 100);
+        public int Writes;
+        public CpuPowerValues ReadActive() => values;
+        public void Write(CpuPowerValues value) { values = value; Writes++; }
+        public void NoClass1() => values = values with { MaximumClass1 = null };
     }
     private sealed class FakeRuntime : ICoolingRuntime
     {

@@ -11,6 +11,7 @@ public sealed class FanControlRuntime(Settings settings) : ICoolingRuntime
     [DllImport("user32.dll")] private static extern bool EnumWindows(WindowCallback callback, IntPtr parameter);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr window, StringBuilder text, int count);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr count, StringBuilder text, uint flags, uint timeout, out IntPtr result);
     public static string? ObserveConfiguration(Settings settings)
     {
         var running = Process.GetProcessesByName("FanControl");
@@ -23,7 +24,14 @@ public sealed class FanControlRuntime(Settings settings) : ICoolingRuntime
                 GetWindowThreadProcessId(window, out var pid);
                 if (pid == running[0].Id)
                 {
-                    var title = new StringBuilder(512); GetWindowText(window, title, title.Capacity);
+                    var title = new StringBuilder(512);
+                    // Same-process GetWindowText can synchronously wait on the UI thread.
+                    // Close joins diagnostic workers on that thread; bound this title query.
+                    if (running[0].Id == Environment.ProcessId)
+                    {
+                        if (SendMessageTimeout(window, 0x000D, (IntPtr)title.Capacity, title, 2, 100, out _) == IntPtr.Zero) return true;
+                    }
+                    else GetWindowText(window, title, title.Capacity);
                     foreach (var profile in settings.Profiles)
                         if (TitleMatchesConfiguration(title.ToString(), profile.ConfigPath)) names.Add(profile.Name);
                 }

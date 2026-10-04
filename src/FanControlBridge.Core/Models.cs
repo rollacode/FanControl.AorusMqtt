@@ -10,6 +10,7 @@ public record Settings
     public string HandoverEvidencePath { get; init; } = "";
     public Profile[] Profiles { get; init; } = [new("Performance"), new("Balanced"), new("Night")];
     public FanCurveAssignment[] CurveAssignments { get; init; } = [];
+    public bool CpuPerformanceControlEnabled { get; init; }
     public MqttSettings Mqtt { get; init; } = new();
 }
 public record MqttSettings

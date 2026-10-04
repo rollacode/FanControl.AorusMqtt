@@ -16,6 +16,7 @@ public sealed class MqttPlugin(IPluginLogger logger) : IPlugin2
     private CancellationTokenSource? stop;
     private Task? polling;
     private CpuPackageSensor? cpuSensor;
+    private CpuPerformanceControl? cpuPerformance;
     private HardwareTelemetry hardware = new(default, [], "Not sampled");
     public void Initialize()
     {
@@ -28,6 +29,7 @@ public sealed class MqttPlugin(IPluginLogger logger) : IPlugin2
             var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FanControlMqtt");
             var settings = Storage.ReadSettings(Path.Combine(directory, "settings.json"));
             settings = settings with { RuntimePath = Environment.ProcessPath ?? settings.RuntimePath };
+            if (settings.CpuPerformanceControlEnabled) cpuPerformance = new(settings, directory, logger);
             var controller = new Controller(Path.Combine(directory, "state.json"), settings, new FanControlRuntime(settings));
             computer = new Computer { IsCpuEnabled = true, IsMotherboardEnabled = true }; computer.Open();
             stop = new(); var cancellation = stop.Token;
@@ -61,23 +63,32 @@ public sealed class MqttPlugin(IPluginLogger logger) : IPlugin2
         // real CPU Package sample already used by MQTT, never connection state as a temperature.
         if (computer is not null)
             container.TempSensors.Add(cpuSensor = new CpuPackageSensor(() => Volatile.Read(ref hardware)));
+        if (cpuPerformance is not null) container.ControlSensors.Add(cpuPerformance);
     }
     public void Update() => cpuSensor?.Update();
     public void Close()
     {
+        cpuPerformance?.Dispose(); cpuPerformance = null;
         cpuSensor = null;
         // Host calls Close on its UI thread. Run asynchronous shutdown outside its
         // synchronization context before synchronously waiting for completion.
+        var closeErrors = new List<string>();
         Task.Run(async () =>
         {
-            if (mqtt is not null) await mqtt.DisposeAsync();
-            if (pipe is not null) await pipe.DisposeAsync();
-            if (diagnostics is not null) await diagnostics.DisposeAsync();
+            foreach (var component in new IAsyncDisposable?[] { mqtt, pipe, diagnostics })
+            {
+                if (component is null) continue;
+                try { await component.DisposeAsync(); }
+                catch (Exception ex) { closeErrors.Add(ex.GetType().Name); }
+            }
         }).GetAwaiter().GetResult();
         mqtt = null; pipe = null; diagnostics = null;
-        stop?.Cancel(); polling?.GetAwaiter().GetResult(); polling = null; stop?.Dispose(); stop = null;
+        stop?.Cancel();
+        try { polling?.GetAwaiter().GetResult(); } catch (Exception ex) { closeErrors.Add(ex.GetType().Name); }
+        polling = null; stop?.Dispose(); stop = null;
         computer?.Close(); computer = null;
         singleton?.Dispose(); singleton = null;
+        foreach (var error in closeErrors) { try { logger.Log("MQTT diagnostic worker closed after failure: " + error); } catch { } }
     }
     private static void Sample(IHardware item, List<HardwareSensorReading> values)
     {
