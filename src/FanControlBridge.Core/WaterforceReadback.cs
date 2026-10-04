@@ -1,4 +1,4 @@
-using HidSharp;
+using System.Text.Json;
 
 namespace FanControlBridge;
 
@@ -15,20 +15,26 @@ public static class WaterforceReadback
         return new(fan, pump, response[13] + response[14] / 10d, DateTimeOffset.UtcNow,
             "Measured 99 DA packet; coolant meaning unverified; no cooling control commands");
     }
-    public static WaterforceReading Read()
+    public static WaterforceReading Read(string? receiptPath = null)
     {
         try
         {
-            var devices = DeviceList.Local.GetHidDevices(0x1044, 0x7A4D).ToArray();
-            if (devices.Length != 1) return new(null, null, null, null, "Expected exactly one Waterforce HID device");
-            var device = devices[0]; var inputLength = device.GetMaxInputReportLength(); var outputLength = device.GetMaxOutputReportLength();
-            if (inputLength is < 16 or > 1024 || outputLength is < 2 or > 1024)
-                return new(null, null, null, null, "Unexpected HID report lengths");
-            using var stream = device.Open(); stream.ReadTimeout = 1500; stream.WriteTimeout = 500;
-            var request = new byte[outputLength]; request[0] = 0x99; request[1] = 0xDA;
-            stream.Write(request); // Status request only. Never E5, E6, B6 or calibration.
-            var response = new byte[inputLength]; var received = stream.Read(response, 0, response.Length);
-            return Parse(response.AsSpan(0, received));
+            // One HID owner: consume the radiator plugin's sample instead of opening
+            // a second handle that can interfere with mode/curve response matching.
+            receiptPath ??= Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FanControlMqtt", "waterforce-plugin-status.json");
+            if (!File.Exists(receiptPath) || new FileInfo(receiptPath).Length > 128 * 1024) throw new IOException();
+            using var document = JsonDocument.Parse(File.ReadAllText(receiptPath));
+            var root = document.RootElement;
+            if (root.GetProperty("hostProcessId").GetInt32() != Environment.ProcessId) throw new InvalidDataException();
+            var status = root.GetProperty("status");
+            var sampledAt = status.GetProperty("SampledAt").GetDateTimeOffset();
+            var age = DateTimeOffset.UtcNow - sampledAt;
+            if (age > TimeSpan.FromSeconds(5) || age < TimeSpan.FromSeconds(-5)) throw new InvalidDataException();
+            var fan = status.GetProperty("FanRpm").GetInt32();
+            var pump = status.GetProperty("PumpRpm").GetInt32();
+            var candidate = status.GetProperty("CandidateLiquidTemperature").GetDouble();
+            if (fan is < 0 or > 6000 || pump is < 0 or > 6000 || !double.IsFinite(candidate) || candidate is < 0 or > 100) throw new InvalidDataException();
+            return new(fan, pump, candidate, sampledAt, "Measured by Waterforce plugin; single HID owner; coolant unverified");
         }
         catch { return new(null, null, null, null, "Status query unavailable or invalid; no stale values retained"); }
     }

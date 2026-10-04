@@ -6,7 +6,7 @@ The host must remain running for software curve control. The MQTT bridge switche
 
 Radiator control is opt-in. The local `waterforce-control.json` and radiator-trial receipt attest to the approved bounded radiator handover. The MQTT live gate additionally requires local handover evidence and one matching native runtime. GCC, ASUS fan-control and AORUS service process checks prevent competing writers during the current handover. A fresh native observation and the three available modes determine readiness independently of transport connectivity.
 
-Normal Waterforce Reset captures/restores the exact original curve and fan mode and checks device readback. It never changes the pump mode. Normal exit was tested separately from abrupt host loss.
+Normal Waterforce Reset captures/restores the exact original curve and fan mode and checks device readback. It never changes the pump mode. A restoration error is logged and recorded locally in `waterforce-last-close.json` as unconfirmed; it must not abort Fan Control backend reload and make all native sensors disappear. MQTT reads fresh samples from the Waterforce plugin in the same process instead of opening a competing HID handle. Crash and reboot fallback remain unverified.
 
 Crash, USB-loss and reboot fallback remain unverified. The plugin forwards native curve requests; the removed separate CPU Package threshold/maximum-speed override and extra watchdog are not part of operation. Firmware behavior after an abrupt host loss is not inferred from ordinary Reset.
 

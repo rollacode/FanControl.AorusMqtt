@@ -67,7 +67,31 @@ try
     Check(!sensorDevice.FanControlEnabled && sensorTransport.Curve.AsSpan(0,16).SequenceEqual(Convert.FromHexString("99D901013003C643055B5308626309C4")), "Native Reset restores original device curve without a fixed maximum command");
 }
 finally { if (Directory.Exists(sensorBackup)) Directory.Delete(sensorBackup, true); }
+var closeFolder = Path.Combine(Path.GetTempPath(), "WaterforceCloseTest-" + Guid.NewGuid());
+try
+{
+    var failingTransport = new FakeTransport();
+    var closingDevice = new GigabyteWaterforceDevice(() => failingTransport);
+    Check(closingDevice.Connect(), "Close regression fake transport connects");
+    closingDevice.ArmFanControl(); failingTransport.Fail = true;
+    var logger = new TestLogger();
+    var plugin = new GigabyteWaterforcePlugin(logger, closeFolder);
+    typeof(GigabyteWaterforcePlugin).GetField("device", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(plugin, closingDevice);
+    plugin.Close();
+    Check(logger.Messages.Count == 1, "Restore failure is logged without breaking host backend reload");
+    using var closeReceipt = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(closeFolder, "waterforce-last-close.json")));
+    Check(!closeReceipt.RootElement.GetProperty("originalStateRestorationConfirmed").GetBoolean(), "Failed restoration is never reported as confirmed");
+    plugin.Close();
+    Check(logger.Messages.Count == 1, "Repeated Close remains idempotent after failed restoration");
+}
+finally { if (Directory.Exists(closeFolder)) Directory.Delete(closeFolder, true); }
 Console.WriteLine($"PASS: {assertions} Waterforce transport assertions; fake HID only, no live writes.");
+
+sealed class TestLogger : FanControl.Plugins.IPluginLogger
+{
+    public List<string> Messages = [];
+    public void Log(string message) => Messages.Add(message);
+}
 
 sealed class FakeTransport : IWaterforceStatusTransport
 {

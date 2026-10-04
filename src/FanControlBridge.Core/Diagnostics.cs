@@ -29,7 +29,7 @@ public sealed class Diagnostics(Controller controller, Settings settings, Func<H
         while (!stop.IsCancellationRequested)
         {
             gpu = await SampleGpuAsync(stop.Token);
-            if (!stop.IsCancellationRequested) waterforce = await Task.Run(WaterforceReadback.Read);
+            if (!stop.IsCancellationRequested) waterforce = await Task.Run(() => WaterforceReadback.Read());
             // Same-user local read-only receipt also works across Windows integrity levels.
             // Never includes MQTT credentials or any writable command endpoint.
             try { Storage.Write(snapshotPath, new DiagnosticReceipt(DateTimeOffset.UtcNow, await SnapshotAsync())); } catch (IOException) { }

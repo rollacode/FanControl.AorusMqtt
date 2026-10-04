@@ -6,6 +6,11 @@ namespace FanControl.GigabyteWaterforce;
 
 public sealed class GigabyteWaterforcePlugin : IPlugin2
 {
+    private readonly IPluginLogger logger;
+    private readonly string receiptDirectory;
+    public GigabyteWaterforcePlugin(IPluginLogger logger) : this(logger, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FanControlMqtt")) { }
+    internal GigabyteWaterforcePlugin(IPluginLogger logger, string receiptDirectory)
+    { this.logger = logger; this.receiptDirectory = receiptDirectory; }
     public string Name => "AORUS Waterforce X360";
     private GigabyteWaterforceDevice? device;
     private CancellationTokenSource? stop;
@@ -59,8 +64,37 @@ public sealed class GigabyteWaterforcePlugin : IPlugin2
     public void Close()
     {
         sensors = [];
-        stop?.Cancel(); polling?.GetAwaiter().GetResult(); stop?.Dispose(); stop = null; polling = null;
-        radiator = null;
-        device?.Dispose(); device = null;
+        var closingDevice = device;
+        string? error = null;
+        try
+        {
+            stop?.Cancel();
+            try { polling?.GetAwaiter().GetResult(); }
+            catch (Exception ex) { error = ex.Message; }
+            try { closingDevice?.Dispose(); }
+            catch (Exception ex) { error = ex.Message; }
+        }
+        finally
+        {
+            stop?.Dispose(); stop = null; polling = null;
+            radiator = null; device = null;
+        }
+        // A restoration error must remain visible, but must not abort the host's
+        // backend reload and leave every native sensor/control missing.
+        if (error is not null)
+        {
+            try { logger.Log("Waterforce original-state restoration unconfirmed during Close: " + error); }
+            catch { /* A logging failure must not abort host reload either. */ }
+        }
+        if (closingDevice is not null)
+        {
+            try
+            {
+                var path = Path.Combine(receiptDirectory, "waterforce-last-close.json");
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, JsonSerializer.Serialize(new { sampledAt = DateTimeOffset.UtcNow, originalStateRestorationConfirmed = error is null, error }));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
     }
 }

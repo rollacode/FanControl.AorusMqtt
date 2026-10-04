@@ -85,6 +85,17 @@ internal static class Program
             var samplePacket = new byte[15]; samplePacket[0] = 0x99; samplePacket[1] = 0xDA;
             samplePacket[2] = 0x28; samplePacket[3] = 0x05; samplePacket[5] = 0x87; samplePacket[6] = 0x08; samplePacket[13] = 41;
             var coolerReading = WaterforceReadback.Parse(samplePacket);
+            var receiptPath = Path.Combine(folder, "waterforce-status.json");
+            void WriteReceipt(int pid, DateTimeOffset at) => File.WriteAllText(receiptPath, JsonSerializer.Serialize(new {
+                hostProcessId = pid, status = new { SampledAt = at, FanRpm = 479, PumpRpm = 2183, CandidateLiquidTemperature = 41.2 } }));
+            WriteReceipt(Environment.ProcessId, DateTimeOffset.UtcNow);
+            Check(WaterforceReadback.Read(receiptPath).FanRpm == 479, "MQTT consumes same-host plugin sample without a second HID owner");
+            WriteReceipt(-1, DateTimeOffset.UtcNow);
+            Check(WaterforceReadback.Read(receiptPath).FanRpm is null, "Another host's receipt is not current telemetry");
+            WriteReceipt(Environment.ProcessId, DateTimeOffset.UtcNow.AddSeconds(-10));
+            Check(WaterforceReadback.Read(receiptPath).FanRpm is null, "Stale plugin receipt clears telemetry");
+            File.WriteAllText(receiptPath, "{}");
+            Check(WaterforceReadback.Read(receiptPath).FanRpm is null, "Incomplete plugin receipt cannot fabricate readings");
             Check(coolerReading.FanRpm == 1320 && coolerReading.PumpRpm == 2183 && coolerReading.CandidateLiquidCelsius == 41, "Waterforce status offsets and LE RPM parsing");
             samplePacket[1] = 0xE6;
             var invalidRejected = false; try { WaterforceReadback.Parse(samplePacket); } catch (InvalidDataException) { invalidRejected = true; }
