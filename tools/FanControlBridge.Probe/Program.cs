@@ -2,6 +2,52 @@ using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
 using FanControlBridge;
+using System.Reflection;
+using System.Runtime.Loader;
+
+if (args.Length == 2 && args[0] is "--native-ipc" or "--native-exit")
+{
+    try
+    {
+        var runtimeFolder = Path.GetFullPath(args[1]);
+        var runtimeExe = Path.Combine(runtimeFolder, "FanControl.exe");
+        if (!File.Exists(runtimeExe)) throw new IOException();
+        if (args[0] == "--native-exit")
+        {
+            var hosts = System.Diagnostics.Process.GetProcessesByName("FanControl");
+            try
+            {
+                if (hosts.Length != 1 || !string.Equals(hosts[0].MainModule?.FileName, runtimeExe, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException();
+            }
+            finally { foreach (var host in hosts) host.Dispose(); }
+        }
+        Assembly? ResolveNative(AssemblyLoadContext context, AssemblyName name)
+        {
+            if (name.Name is null || Path.GetFileName(name.Name) != name.Name) return null;
+            var path = Path.Combine(runtimeFolder, name.Name + ".dll");
+            return File.Exists(path) ? context.LoadFromAssemblyPath(path) : null;
+        }
+        AssemblyLoadContext.Default.Resolving += ResolveNative;
+        try
+        {
+            var assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.Combine(runtimeFolder, "FanControl.IPC.dll"));
+            var client = assembly.GetType("FanControl.IPC.IPCFactory", true)!.GetMethod("GetFanControlClient", Type.EmptyTypes)!.Invoke(null, null)!;
+            var operation = args[0] == "--native-exit" ? "Exit" : "ListAvailableConfigs";
+            var method = client.GetType().GetMethods().Single(m => m.Name == operation && m.GetParameters().Length == 4);
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            var reply = method.Invoke(client, [Activator.CreateInstance(method.GetParameters()[0].ParameterType), null, DateTime.UtcNow.AddSeconds(2), cancellation.Token]);
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                operation, sampledAt = DateTimeOffset.UtcNow,
+                currentConfig = operation == "ListAvailableConfigs" ? reply?.GetType().GetProperty("CurrentConfig")?.GetValue(reply) as string : null
+            }, Storage.Json));
+        }
+        finally { AssemblyLoadContext.Default.Resolving -= ResolveNative; }
+    }
+    catch { Console.Error.WriteLine("Native IPC unavailable; no extra host was launched."); Environment.ExitCode = 1; }
+    return;
+}
 
 if (args.Length == 1 && args[0] == "--record-native-fingerprints")
 {

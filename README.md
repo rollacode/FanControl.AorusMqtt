@@ -88,3 +88,5 @@ The build runs mock configuration/MQTT tests and fake HID tests; it sends no liv
 Original integration code is MIT-licensed; see [LICENSE](LICENSE). The Waterforce implementation derives from [brenoperucchi/FanControl.GigabyteWaterforce](https://github.com/brenoperucchi/FanControl.GigabyteWaterforce), whose upstream README declares MIT. That declaration and the original README are retained. Fan Control itself is separate proprietary software and is not distributed here.
 
 No local configuration, broker credential, device snapshot, runtime binary or installation history is included in this repository.
+
+For terminal-only status, backups, restart, installation and recovery, see [maintenance commands](docs/MAINTENANCE.md). Optional `make status`, `make backup` and `make restart-force` shortcuts are included.

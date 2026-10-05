@@ -10,3 +10,5 @@ dotnet publish src/FanControl.Mqtt -c Release -o .artifacts/mqtt-plugin
 if ($LASTEXITCODE -ne 0) { throw 'MQTT plugin publish failed' }
 dotnet publish third_party/Waterforce -c Release -o .artifacts/waterforce-validated
 if ($LASTEXITCODE -ne 0) { throw 'Waterforce plugin publish failed' }
+dotnet publish tools/FanControlBridge.Probe -c Release -o .artifacts/probe
+if ($LASTEXITCODE -ne 0) { throw 'Diagnostic helper publish failed' }
