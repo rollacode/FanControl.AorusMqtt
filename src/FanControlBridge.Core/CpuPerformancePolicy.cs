@@ -23,7 +23,7 @@ public sealed class CpuPerformancePolicy(ICpuPowerSettings power, string backupP
             var unchanged = power.ReadActive();
             return new(DateTimeOffset.UtcNow, null, unchanged.Boost, unchanged.Maximum, "Native profile temporarily unavailable; current CPU policy unchanged");
         }
-        if (profile != "Night" || requested is null)
+        if (profile != "Night")
         {
             Restore();
             var normal = power.ReadActive();
@@ -35,7 +35,9 @@ public sealed class CpuPerformancePolicy(ICpuPowerSettings power, string backupP
             Storage.Write(backupPath, originals.Values.Append(current).ToArray()); // Persist before the first policy write.
             originals.Add(current.Scheme, current);
         }
-        var maximum = (uint)Math.Round(requested.Value);
+        // Night is the trigger. A disabled/missing native slider releases only
+        // its additional percentage cap, never the mode's boost restriction.
+        var maximum = (uint)Math.Round(requested ?? 100);
         var target = current with { Boost = 0, Maximum = maximum, MaximumClass1 = current.MaximumClass1 is null ? null : maximum };
         if (current != target) power.Write(target);
         var actual = power.ReadActive();

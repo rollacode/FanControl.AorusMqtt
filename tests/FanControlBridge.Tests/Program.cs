@@ -59,7 +59,7 @@ internal static class Program
             Check(cpuPower.ReadActive() == originalPower, "Restart while Night is active preserves the pre-Night boost snapshot");
             cpuPolicy.Apply("Night", 50);
             cpuPolicy.Apply("Night", null);
-            Check(cpuPower.ReadActive() == originalPower, "Disabling the CPU card restores the original CPU policy");
+            Check(cpuPower.ReadActive() == originalPower with { Boost = 0, Maximum = 100, MaximumClass1 = 100 }, "Disabling the CPU slider releases its extra cap while Night still disables boost");
             cpuPolicy.Apply("Night", 70);
             cpuPolicy.Apply(null, 70);
             Check(cpuPower.ReadActive().Boost == 0 && cpuPower.ReadActive().Maximum == 70, "Transient native title timeout cannot re-enable boost under Night load");

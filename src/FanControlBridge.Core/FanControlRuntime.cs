@@ -115,6 +115,10 @@ public sealed class FanControlRuntime(Settings settings) : ICoolingRuntime
                 return Rejected("Exactly one matching Fan Control instance must already be running; bridge will not launch a writer");
         }
         finally { foreach (var process in running) process.Dispose(); }
+        // The native CLI may open another full host when its IPC endpoint is
+        // broken. Do not launch a configuration command against that condition.
+        if (ObserveIpcConfiguration(settings) is null)
+            return Rejected("Fan Control native command transport unavailable; restart the existing host before switching configurations");
         var info = new ProcessStartInfo(settings.RuntimePath) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(settings.RuntimePath)! };
         info.ArgumentList.Add("-c"); info.ArgumentList.Add(Path.GetFullPath(profile.ConfigPath));
         using var sender = Process.Start(info) ?? throw new InvalidOperationException();
