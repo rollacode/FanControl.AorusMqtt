@@ -82,7 +82,7 @@ Run as administrator for the same Windows user. The script:
 - Normally exits the known Fan Control process before replacing plugins; it does not forcibly terminate an armed host.
 - Installs FanControl.Mqtt.dll and FanControl.GigabyteWaterforce.dll.
 - Registers the FanControl logon task with an absolute executable path, Highest rights, Interactive logon and a 15-second logon delay.
-- Starts the full native window using -w so the actually loaded filename can be observed, including startup from a previously minimized session. The window may be minimized afterwards while the host stays running.
+- Starts the native window using -w for local setup. It may then be closed to the tray; native IPC continues to report the loaded configuration while the host stays running.
 - Sets the separate native service and previously released competing vendor services to Manual, preventing automatic competing startup. Running competing services are rejected rather than silently stopped.
 - Runs the scheduled task to check the same startup path immediately.
 

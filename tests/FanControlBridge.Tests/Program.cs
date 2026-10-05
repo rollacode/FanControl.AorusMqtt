@@ -28,6 +28,13 @@ internal static class Program
         try
         {
             var settings = new Settings();
+            var nativeFolder = Path.Combine(folder, "native");
+            var nativeProfiles = new[] { new Profile("Night", Path.Combine(nativeFolder, "Night.json")), new Profile("Performance", Path.Combine(nativeFolder, "Performance.json")), new Profile("Balanced", Path.Combine(nativeFolder, "Balanced.json")) };
+            Check(FanControlRuntime.MatchNativeConfiguration("Night.json", nativeFolder, nativeProfiles) == "Night", "Native IPC current config is observed without any visible window");
+            Check(FanControlRuntime.MatchNativeConfiguration(Path.Combine(nativeFolder, "Balanced.json"), nativeFolder, nativeProfiles) == "Balanced", "Full native current-config path matches an explicit mode");
+            Check(FanControlRuntime.MatchNativeConfiguration("Night.json", Path.Combine(folder, "another-folder"), nativeProfiles) is null, "An unrelated config with the same basename cannot masquerade as an installed profile");
+            Check(FanControlRuntime.MatchNativeConfiguration("unknown.json", nativeFolder, nativeProfiles) is null && FanControlRuntime.MatchNativeConfiguration(null, nativeFolder, nativeProfiles) is null, "Missing or unknown native config never becomes requested/applied state");
+            Check(FanControlRuntime.MatchNativeConfiguration("Night.json", nativeFolder, [nativeProfiles[0], nativeProfiles[0] with { Name = "Performance" }]) is null, "Ambiguous native path mapping is rejected");
             Check(!settings.CpuPerformanceControlEnabled, "CPU policy writes remain opt-in for public installations");
             var cpuPower = new FakeCpuPower();
             var originalPower = cpuPower.ReadActive();

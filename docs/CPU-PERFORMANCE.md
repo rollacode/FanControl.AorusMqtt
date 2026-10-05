@@ -10,7 +10,7 @@ When the active native configuration is Night and the card is enabled, the plugi
 
 The plugin changes only the active plan's AC processor boost and maximum-performance indexes. It does not select another power plan, alter sleep/display settings, or configure DC/battery behavior. All power-plan identifiers and backups stay in local application data.
 
-If the native title query temporarily times out under heavy load, the current CPU policy remains unchanged. A missing title is not interpreted as a daytime mode. Only an observed Performance/Balanced configuration, disabling the card in an observed mode, or normal plugin close restores the original policy.
+If native configuration observation temporarily fails under heavy load, the current CPU policy remains unchanged. An unavailable observation is not interpreted as a daytime mode. The primary native IPC query works while the UI is closed to the tray. Only an observed Performance/Balanced configuration, disabling the card in an observed mode, or normal plugin close restores the original policy.
 
 `cpu-performance-before-night.json` persists the original policy before any write; `cpu-performance-status.json` records actual Windows policy readback. An unchanged request does not repeatedly reapply the plan. Native sensor callbacks only queue intent; Windows writes run on one plugin worker. Normal plugin close restores the original CPU policy. After an abrupt process loss, the Windows restriction can remain until plugin startup or manual restoration; abrupt-loss and reboot recovery have not been live-tested.
 

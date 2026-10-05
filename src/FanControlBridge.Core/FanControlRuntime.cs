@@ -2,11 +2,53 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Reflection;
 
 namespace FanControlBridge;
 
 public sealed class FanControlRuntime(Settings settings) : ICoolingRuntime
 {
+    private static readonly object ipcGate = new();
+    private static object? ipcClient;
+    // Fan Control supplies this public IPC API. Resolve it from the host rather
+    // than redistributing or embedding its proprietary runtime assemblies.
+    private static string? ObserveIpcConfiguration(Settings settings)
+    {
+        try
+        {
+            object client;
+            lock (ipcGate)
+            {
+                if (ipcClient is null)
+                {
+                    var assembly = Assembly.Load("FanControl.IPC");
+                    ipcClient = assembly.GetType("FanControl.IPC.IPCFactory", true)!.GetMethod("GetFanControlClient", Type.EmptyTypes)!.Invoke(null, null);
+                }
+                client = ipcClient!;
+            }
+            var method = client.GetType().GetMethods().Single(m => m.Name == "ListAvailableConfigs" && m.GetParameters().Length == 4);
+            var request = Activator.CreateInstance(method.GetParameters()[0].ParameterType);
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+            var reply = method.Invoke(client, [request, null, DateTime.UtcNow.AddMilliseconds(500), cancellation.Token]);
+            if (reply is null) return null;
+            var current = reply.GetType().GetProperty("CurrentConfig")!.GetValue(reply) as string;
+            var folder = reply.GetType().GetProperty("ConfigFolder")!.GetValue(reply) as string;
+            return MatchNativeConfiguration(current, folder, settings.Profiles);
+        }
+        catch { return null; }
+    }
+    public static string? MatchNativeConfiguration(string? current, string? folder, Profile[] profiles)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(current) || string.IsNullOrWhiteSpace(folder) || !Path.IsPathFullyQualified(folder)) return null;
+            var actualPath = Path.GetFullPath(Path.IsPathRooted(current) ? current : Path.Combine(folder, current));
+            var matches = profiles.Where(p => p.Name is "Performance" or "Balanced" or "Night")
+                .Where(p => !string.IsNullOrWhiteSpace(p.ConfigPath) && string.Equals(Path.GetFullPath(p.ConfigPath), actualPath, StringComparison.OrdinalIgnoreCase)).ToArray();
+            return matches.Length == 1 ? matches[0].Name : null;
+        }
+        catch { return null; }
+    }
     private delegate bool WindowCallback(IntPtr window, IntPtr parameter);
     [DllImport("user32.dll")] private static extern bool EnumWindows(WindowCallback callback, IntPtr parameter);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
@@ -18,6 +60,8 @@ public sealed class FanControlRuntime(Settings settings) : ICoolingRuntime
         try
         {
             if (running.Length != 1 || !string.Equals(running[0].MainModule?.FileName, Path.GetFullPath(settings.RuntimePath), StringComparison.OrdinalIgnoreCase)) return null;
+            var nativeProfile = ObserveIpcConfiguration(settings);
+            if (nativeProfile is not null) return nativeProfile;
             var names = new HashSet<string>(StringComparer.Ordinal);
             EnumWindows((window, _) =>
             {
@@ -78,13 +122,13 @@ public sealed class FanControlRuntime(Settings settings) : ICoolingRuntime
         try { await sender.WaitForExitAsync(timeout.Token); }
         catch (OperationCanceledException) { return new(false, "CLI did not finish within ten seconds; application unknown. No cooling process was killed."); }
         if (sender.ExitCode != 0) return new(false, "CLI returned failure; application unknown");
-        // OS window metadata observes the runtime independently of the requested command.
+        // Native IPC (with window-title fallback) observes the loaded runtime independently of the requested command.
         // It acknowledges the loaded configuration only, never all physical fan outputs.
         var until = DateTimeOffset.UtcNow.AddSeconds(5);
         while (DateTimeOffset.UtcNow < until)
         {
                 if (ObserveConfiguration(settings) == profile.Name)
-                    return new(true, "Loaded Fan Control configuration observed in native window title; individual hardware outputs remain separately monitored",
+                    return new(true, "Loaded Fan Control configuration observed from native runtime; individual hardware outputs remain separately monitored",
                         profile.Name, ObservationCode: "runtime_config_observed");
             await Task.Delay(200);
         }
