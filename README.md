@@ -90,3 +90,5 @@ Original integration code is MIT-licensed; see [LICENSE](LICENSE). The Waterforc
 No local configuration, broker credential, device snapshot, runtime binary or installation history is included in this repository.
 
 For terminal-only status, backups, restart, installation and recovery, see [maintenance commands](docs/MAINTENANCE.md). Optional `make status`, `make backup` and `make restart-force` shortcuts are included.
+
+Download ready-to-install plugin DLLs from [GitHub Releases](https://github.com/rollacode/FanControl.AorusMqtt/releases). The ZIP contains a Plugins folder and installation notes; local configurations and credentials are excluded.

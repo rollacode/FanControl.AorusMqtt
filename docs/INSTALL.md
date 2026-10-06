@@ -1,8 +1,16 @@
 # Installation and persistent startup
 
+## Downloaded plugin bundle
+
+Download the ZIP from [GitHub Releases](https://github.com/rollacode/FanControl.AorusMqtt/releases). It contains `Plugins/FanControl.Mqtt.dll` and `Plugins/FanControl.GigabyteWaterforce.dll`. Exit Fan Control normally, back up your existing plugins and configurations, and copy those DLLs into the existing host's `Plugins` directory. Use the .NET 10 edition of Fan Control V282; its SDK, HidSharp and hardware-monitor assemblies are supplied by the host rather than this archive.
+
+The bundle preserves your existing curves and settings; it contains no user configurations, credentials, native runtime or debug symbols. MQTT still needs the local settings and credential provisioning below. The provisioning helper and optional maintenance scripts are available as repository source rather than packaged executables. Waterforce control remains opt-in after validation, and optional Night CPU policy is disabled by default.
+
+To build the same allowlisted archive from source, run `./scripts/package-release.ps1 -Version <version>`. This rebuilds without debug symbols or local source paths, runs mock tests, and writes a ZIP plus SHA256 checksums under `.artifacts/releases`. It does not install or start anything.
+
 ## Runtime and build
 
-1. On Windows, install the .NET 9 and .NET 10 SDKs and obtain the .NET 10 edition of Fan Control V282 from its official distribution. The .NET Framework edition is not supported by this MQTT plugin.
+1. On Windows, install the required .NET SDK/runtime versions and obtain Fan Control from its official distribution.
 2. Put the separately licensed runtime under `.artifacts/runtime`. Copy its `FanControl.Plugins.dll` into `third_party/Waterforce/lib`.
 3. Run `./scripts/build.ps1`. It builds both plugins and runs mock/fake-device tests. It does not install or start them.
 
@@ -42,7 +50,7 @@ Create settings.json there with installation-specific values. This example conta
 }
 ```
 
-Radiator control starts read-only. Complete the explicit validation step below to obtain real local evidence and enable it; do not invent handover or radiator-test receipts. Readiness reports whether mode selection is available.
+Do not invent handover or radiator-test receipts. Radiator control requires the approved local opt-in and verified radiator-trial evidence described in OPERATIONS.md; otherwise the plugin remains read-only. Readiness reports whether mode selection is available.
 
 Provision the actual broker username and password with the local helper. The password is read from stdin and stored with CurrentUser DPAPI:
 
@@ -51,22 +59,6 @@ Provision the actual broker username and password with the local helper. The pas
 ```
 
 The provider notation is a placeholder, not a command. Never paste a password into source, a command argument or a log.
-
-## Validate and enable the radiator
-
-Capture your existing vendor settings, release competing writers, and stop Fan Control normally. Check that you have identified the CPU radiator and that the workload permits a brief 800 RPM test. Configure the three native files and local settings first.
-
-From an elevated PowerShell for the same user, run this explicit hardware operation:
-
-```powershell
-dotnet run --project tools/Waterforce.Validation -c Release -- --validate-and-enable
-```
-
-This command captures the original curve/mode, requests 800 RPM for eight seconds, checks measured response and device readback, then restores the original state with readback. It changes no pump setting. It does not stop programs automatically and refuses to test while Fan Control or a detected competing writer is running.
-
-Only after confirmed success does it write waterforce-control.json, the validation receipt and native-mqtt-handover.json, and enable liveHandoverValidated in local settings. The legacy receipt filename includes 2500; its requestedRpm records the actual 800 RPM target. Generated evidence stays local. Failure does not fabricate a successful receipt.
-
-Install both built DLLs into the native Plugins directory while the host is stopped, then restart Fan Control with -w. Pair the radiator control with its radiator RPM sensor and assign your CPU curve. Preserve those assignments in every native configuration. A missing validation receipt leaves the radiator control unregistered. MQTT availability also requires actual native configuration observation; connection alone is insufficient.
 
 ## Elevated interactive autostart
 
@@ -94,10 +86,6 @@ For migrating a renamed plugin/data directory, supply `-MigrationPlanPath <local
 
 Ordinary Windows restart does not remove the native files, local settings, protected credentials, opt-in evidence or task. Profile changes are saved by Fan Control; MQTT reports the actual loaded mode after startup. Driver/runtime availability still matters.
 
-The task startup path was exercised in the tested installation. A full PC reboot has not been performed as part of validation.
+The elevated task and manual service startup types were read back after installation, and the task was used to launch the real host. A full PC reboot has not been performed as part of validation.
 
 For rollback, use the private backups and the device-release procedure in OPERATIONS.md. Keep firmware safety and software crash fallback distinct from persistence of settings.
-
-## Home Assistant
-
-Merge [examples/home-assistant.yaml](../examples/home-assistant.yaml) under your existing MQTT configuration and adapt the topic prefix and unique ID. It creates a direct three-mode selector using actual observed state and online/readiness availability. No schedule, presence or charging automation is installed. See the [MQTT guide](MQTT.md).
