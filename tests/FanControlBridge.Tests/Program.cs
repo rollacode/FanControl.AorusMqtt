@@ -39,6 +39,24 @@ internal static class Program
             Check((string?)FanControlRuntime.AwaitNativeResponse(successfulNativeCall, TimeSpan.FromMilliseconds(40)) == "Night" && successfulNativeCall.Disposed, "A successful native response also closes its transport");
             var failedNativeCall = new FakeNativeCall(Task.FromException<object>(new IOException()));
             Check(FanControlRuntime.AwaitNativeResponse(failedNativeCall, TimeSpan.FromMilliseconds(40)) is null && failedNativeCall.Disposed, "A failed native call closes its transport");
+            var lateFaultEscaped = false;
+            EventHandler<UnobservedTaskExceptionEventArgs> lateFaultHandler = (_, args) =>
+            {
+                if (args.Exception.Flatten().InnerExceptions.Any(e => e.Message == "late-native-timeout-test"))
+                    lateFaultEscaped = true;
+            };
+            TaskScheduler.UnobservedTaskException += lateFaultHandler;
+            try
+            {
+                var lateFault = CreateLateNativeFault();
+                for (var attempt = 0; attempt < 20 && lateFault.IsAlive; attempt++)
+                {
+                    GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+                    await Task.Delay(10);
+                }
+                Check(!lateFault.IsAlive && !lateFaultEscaped, "An RPC fault arriving after timeout is collected without reaching the host error-dialog handler");
+            }
+            finally { TaskScheduler.UnobservedTaskException -= lateFaultHandler; }
             var nativeFolder = Path.Combine(folder, "native");
             var nativeProfiles = new[] { new Profile("Night", Path.Combine(nativeFolder, "Night.json")), new Profile("Performance", Path.Combine(nativeFolder, "Performance.json")), new Profile("Balanced", Path.Combine(nativeFolder, "Balanced.json")) };
             Check(FanControlRuntime.MatchNativeConfiguration("Night.json", nativeFolder, nativeProfiles) == "Night", "Native IPC current config is observed without any visible window");
@@ -266,6 +284,14 @@ internal static class Program
         await publisher.PublishAsync(new MqttApplicationMessageBuilder().WithTopic(MqttBridge.Root + "/night/set").WithPayload("ON").Build()); await Task.Delay(100);
         Check(runtime.Calls == beforeOldToggle, "Old Night topic cannot mutate hardware");
         await publisher.DisconnectAsync(); await broker.StopAsync();
+    }
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static WeakReference CreateLateNativeFault()
+    {
+        var source = new TaskCompletionSource<object>();
+        FanControlRuntime.WaitForNativeResponse(source.Task, TimeSpan.FromMilliseconds(10));
+        source.SetException(new IOException("late-native-timeout-test"));
+        return new WeakReference(source.Task);
     }
     private sealed class FakeNativeCall(Task<object> response) : IDisposable
     {

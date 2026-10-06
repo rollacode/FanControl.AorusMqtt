@@ -43,12 +43,21 @@ public sealed class FanControlRuntime(Settings settings) : ICoolingRuntime
     }
     public static bool WaitForNativeResponse(Task response, TimeSpan timeout)
     {
+        // WaitAsync abandons its wait on timeout, not the underlying RPC.
+        // Observe a later transport fault as well: otherwise the host's global
+        // UnobservedTaskException handler shows an error dialog during GC.
+        ObserveNativeFailure(response);
         try { response.WaitAsync(timeout).GetAwaiter().GetResult(); return true; }
         catch { return false; }
     }
+    private static void ObserveNativeFailure(Task task) =>
+        _ = task.ContinueWith(failed => { _ = failed.Exception; }, CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     public static object? AwaitNativeResponse(object? call, TimeSpan timeout)
     {
         using var lifetime = call as IDisposable;
+        if (call?.GetType().GetProperty("ResponseHeadersAsync")?.GetValue(call) is Task headers)
+            ObserveNativeFailure(headers);
         if (call?.GetType().GetProperty("ResponseAsync")?.GetValue(call) is not Task response || !WaitForNativeResponse(response, timeout)) return null;
         return response.GetType().GetProperty("Result")?.GetValue(response);
     }
