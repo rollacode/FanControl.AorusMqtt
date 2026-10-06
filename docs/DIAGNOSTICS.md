@@ -13,3 +13,11 @@ CPU Package, motherboard CPU and GPU are separate readings. Sensor IDs and ages 
 The optional fixed NVIDIA query is temperature-only. Separate status-only HID monitoring uses 99 DA; it does not send radiator/pump control commands. Shared HID access can cause response contention, so do not launch duplicate probes while the cooling host is using that device.
 
 Telemetry and MQTT run inside Fan Control. The standalone hardware/tray applications and live control trial tool have been removed; the remaining helper provides credential setup and explicit diagnostics.
+
+## Native IPC stalls
+
+A live broker connection with fresh sensors but no observed profile can be a native IPC failure rather than an MQTT outage. Compare `make status` and the CPU receipt timestamps. An actual stalled host stack showed the CPU worker and diagnostic poller blocked in `GrpcDotNetNamedPipes.NamedPipeChannel.BlockingUnaryCall` / `ListAvailableConfigs`, even though the caller supplied a deadline and cancellation.
+
+The observer and maintenance helper now use `ListAvailableConfigsAsync` / `ExitAsync`. They independently bound response waiting and dispose every async call on success, failure and timeout, closing its transport. Regression tests simulate a response that never completes or honors cancellation. A timeout still means unknown observed mode; no mode is guessed from the requested profile or CACHE. Night CPU policy continues to hold its current values while observation is unknown.
+
+Install a rebuilt plugin using `./scripts/maintenance.ps1 -Action Install -Force` if an old host is already wedged. This makes a backup and restarts only the configured native runtime; it does not use mouse or window automation. Verify fresh observed mode, CPU receipt and broker state after restart. A short successful check does not establish overnight stability.

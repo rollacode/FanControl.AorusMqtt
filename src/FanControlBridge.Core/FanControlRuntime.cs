@@ -26,16 +26,31 @@ public sealed class FanControlRuntime(Settings settings) : ICoolingRuntime
                 }
                 client = ipcClient!;
             }
-            var method = client.GetType().GetMethods().Single(m => m.Name == "ListAvailableConfigs" && m.GetParameters().Length == 4);
+            var method = client.GetType().GetMethods().Single(m => m.Name == "ListAvailableConfigsAsync" && m.GetParameters().Length == 4);
             var request = Activator.CreateInstance(method.GetParameters()[0].ParameterType);
             using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-            var reply = method.Invoke(client, [request, null, DateTime.UtcNow.AddMilliseconds(500), cancellation.Token]);
+            // The native named-pipe BlockingUnaryCall can remain in Task.Result
+            // after its deadline/cancellation. Own the async call lifetime and
+            // independently bound waiting; dispose its pipe on every outcome.
+            var call = method.Invoke(client, [request, null, DateTime.UtcNow.AddMilliseconds(500), cancellation.Token]);
+            var reply = AwaitNativeResponse(call, TimeSpan.FromMilliseconds(500));
             if (reply is null) return null;
             var current = reply.GetType().GetProperty("CurrentConfig")!.GetValue(reply) as string;
             var folder = reply.GetType().GetProperty("ConfigFolder")!.GetValue(reply) as string;
             return MatchNativeConfiguration(current, folder, settings.Profiles);
         }
         catch { return null; }
+    }
+    public static bool WaitForNativeResponse(Task response, TimeSpan timeout)
+    {
+        try { response.WaitAsync(timeout).GetAwaiter().GetResult(); return true; }
+        catch { return false; }
+    }
+    public static object? AwaitNativeResponse(object? call, TimeSpan timeout)
+    {
+        using var lifetime = call as IDisposable;
+        if (call?.GetType().GetProperty("ResponseAsync")?.GetValue(call) is not Task response || !WaitForNativeResponse(response, timeout)) return null;
+        return response.GetType().GetProperty("Result")?.GetValue(response);
     }
     public static string? MatchNativeConfiguration(string? current, string? folder, Profile[] profiles)
     {

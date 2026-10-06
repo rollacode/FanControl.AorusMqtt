@@ -28,6 +28,17 @@ internal static class Program
         try
         {
             var settings = new Settings();
+            var stuckNativeResponse = new TaskCompletionSource<object>();
+            var nativeWait = System.Diagnostics.Stopwatch.StartNew();
+            Check(!FanControlRuntime.WaitForNativeResponse(stuckNativeResponse.Task, TimeSpan.FromMilliseconds(40)) && nativeWait.Elapsed < TimeSpan.FromSeconds(1), "A transport ignoring cancellation cannot hang the native observer");
+            Check(FanControlRuntime.WaitForNativeResponse(Task.CompletedTask, TimeSpan.FromMilliseconds(40)), "A completed native response remains readable");
+            Check(!FanControlRuntime.WaitForNativeResponse(Task.FromException(new IOException()), TimeSpan.FromMilliseconds(40)), "A failed native response is unavailable rather than an invented mode");
+            var stuckNativeCall = new FakeNativeCall(stuckNativeResponse.Task);
+            Check(FanControlRuntime.AwaitNativeResponse(stuckNativeCall, TimeSpan.FromMilliseconds(40)) is null && stuckNativeCall.Disposed, "A stalled native call closes its transport on timeout");
+            var successfulNativeCall = new FakeNativeCall(Task.FromResult<object>("Night"));
+            Check((string?)FanControlRuntime.AwaitNativeResponse(successfulNativeCall, TimeSpan.FromMilliseconds(40)) == "Night" && successfulNativeCall.Disposed, "A successful native response also closes its transport");
+            var failedNativeCall = new FakeNativeCall(Task.FromException<object>(new IOException()));
+            Check(FanControlRuntime.AwaitNativeResponse(failedNativeCall, TimeSpan.FromMilliseconds(40)) is null && failedNativeCall.Disposed, "A failed native call closes its transport");
             var nativeFolder = Path.Combine(folder, "native");
             var nativeProfiles = new[] { new Profile("Night", Path.Combine(nativeFolder, "Night.json")), new Profile("Performance", Path.Combine(nativeFolder, "Performance.json")), new Profile("Balanced", Path.Combine(nativeFolder, "Balanced.json")) };
             Check(FanControlRuntime.MatchNativeConfiguration("Night.json", nativeFolder, nativeProfiles) == "Night", "Native IPC current config is observed without any visible window");
@@ -255,6 +266,12 @@ internal static class Program
         await publisher.PublishAsync(new MqttApplicationMessageBuilder().WithTopic(MqttBridge.Root + "/night/set").WithPayload("ON").Build()); await Task.Delay(100);
         Check(runtime.Calls == beforeOldToggle, "Old Night topic cannot mutate hardware");
         await publisher.DisconnectAsync(); await broker.StopAsync();
+    }
+    private sealed class FakeNativeCall(Task<object> response) : IDisposable
+    {
+        public Task<object> ResponseAsync => response;
+        public bool Disposed;
+        public void Dispose() => Disposed = true;
     }
     private sealed class FakeCpuPower : ICpuPowerSettings
     {
