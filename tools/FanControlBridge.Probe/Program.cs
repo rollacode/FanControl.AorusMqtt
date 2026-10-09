@@ -34,10 +34,7 @@ if (args.Length == 2 && args[0] is "--native-ipc" or "--native-exit")
             var assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.Combine(runtimeFolder, "FanControl.IPC.dll"));
             var client = assembly.GetType("FanControl.IPC.IPCFactory", true)!.GetMethod("GetFanControlClient", Type.EmptyTypes)!.Invoke(null, null)!;
             var operation = args[0] == "--native-exit" ? "ExitAsync" : "ListAvailableConfigsAsync";
-            var method = client.GetType().GetMethods().Single(m => m.Name == operation && m.GetParameters().Length == 4);
-            using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-            var call = method.Invoke(client, [Activator.CreateInstance(method.GetParameters()[0].ParameterType), null, DateTime.UtcNow.AddSeconds(2), cancellation.Token]);
-            var reply = FanControlRuntime.AwaitNativeResponse(call, TimeSpan.FromSeconds(2)) ?? throw new IOException();
+            var reply = FanControlRuntime.InvokeNativeUnary(client, operation, TimeSpan.FromSeconds(2)) ?? throw new IOException();
             Console.WriteLine(JsonSerializer.Serialize(new
             {
                 operation, sampledAt = DateTimeOffset.UtcNow,

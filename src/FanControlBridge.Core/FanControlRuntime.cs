@@ -26,20 +26,24 @@ public sealed class FanControlRuntime(Settings settings) : ICoolingRuntime
                 }
                 client = ipcClient!;
             }
-            var method = client.GetType().GetMethods().Single(m => m.Name == "ListAvailableConfigsAsync" && m.GetParameters().Length == 4);
-            var request = Activator.CreateInstance(method.GetParameters()[0].ParameterType);
-            using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-            // The native named-pipe BlockingUnaryCall can remain in Task.Result
-            // after its deadline/cancellation. Own the async call lifetime and
-            // independently bound waiting; dispose its pipe on every outcome.
-            var call = method.Invoke(client, [request, null, DateTime.UtcNow.AddMilliseconds(500), cancellation.Token]);
-            var reply = AwaitNativeResponse(call, TimeSpan.FromMilliseconds(500));
+            var reply = InvokeNativeUnary(client, "ListAvailableConfigsAsync", TimeSpan.FromMilliseconds(500));
             if (reply is null) return null;
             var current = reply.GetType().GetProperty("CurrentConfig")!.GetValue(reply) as string;
             var folder = reply.GetType().GetProperty("ConfigFolder")!.GetValue(reply) as string;
             return MatchNativeConfiguration(current, folder, settings.Profiles);
         }
         catch { return null; }
+    }
+    public static object? InvokeNativeUnary(object client, string operation, TimeSpan timeout)
+    {
+        if (operation is not ("ListAvailableConfigsAsync" or "ExitAsync")) throw new InvalidOperationException("Unsupported native diagnostic operation");
+        var method = client.GetType().GetMethods().Single(m => m.Name == operation && m.GetParameters().Length == 4);
+        // The host transport can deadlock PayloadQueue cancellation against
+        // response completion. Keep the deadline in our WaitAsync instead of
+        // arming its cancellation registrations/timer. Dispose still sends
+        // the transport's normal cancellation packet after a bounded timeout.
+        var call = method.Invoke(client, [Activator.CreateInstance(method.GetParameters()[0].ParameterType), null, null, CancellationToken.None]);
+        return AwaitNativeResponse(call, timeout);
     }
     public static bool WaitForNativeResponse(Task response, TimeSpan timeout)
     {

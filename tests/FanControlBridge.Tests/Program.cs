@@ -39,6 +39,13 @@ internal static class Program
             Check((string?)FanControlRuntime.AwaitNativeResponse(successfulNativeCall, TimeSpan.FromMilliseconds(40)) == "Night" && successfulNativeCall.Disposed, "A successful native response also closes its transport");
             var failedNativeCall = new FakeNativeCall(Task.FromException<object>(new IOException()));
             Check(FanControlRuntime.AwaitNativeResponse(failedNativeCall, TimeSpan.FromMilliseconds(40)) is null && failedNativeCall.Disposed, "A failed native call closes its transport");
+            var nativeClient = new FakeNativeClient();
+            Check((string?)FanControlRuntime.InvokeNativeUnary(nativeClient, "ListAvailableConfigsAsync", TimeSpan.FromMilliseconds(40)) == "Night"
+                && nativeClient.Deadline is null && !nativeClient.Token.CanBeCanceled, "Native response reads do not arm the transport cancellation race");
+            nativeClient.Stall = true;
+            var nativeTimeout = System.Diagnostics.Stopwatch.StartNew();
+            Check(FanControlRuntime.InvokeNativeUnary(nativeClient, "ListAvailableConfigsAsync", TimeSpan.FromMilliseconds(40)) is null
+                && nativeClient.Call!.Disposed && nativeTimeout.Elapsed < TimeSpan.FromSeconds(1), "Independent timeout and call disposal still apply without a transport deadline");
             var lateFaultEscaped = false;
             EventHandler<UnobservedTaskExceptionEventArgs> lateFaultHandler = (_, args) =>
             {
@@ -298,6 +305,19 @@ internal static class Program
         public Task<object> ResponseAsync => response;
         public bool Disposed;
         public void Dispose() => Disposed = true;
+    }
+    private sealed class FakeNativeRequest { }
+    private sealed class FakeNativeClient
+    {
+        public DateTime? Deadline;
+        public CancellationToken Token;
+        public bool Stall;
+        public FakeNativeCall? Call;
+        public FakeNativeCall ListAvailableConfigsAsync(FakeNativeRequest request, object? headers, DateTime? deadline, CancellationToken token)
+        {
+            Deadline = deadline; Token = token;
+            return Call = new FakeNativeCall(Stall ? new TaskCompletionSource<object>().Task : Task.FromResult<object>("Night"));
+        }
     }
     private sealed class FakeCpuPower : ICpuPowerSettings
     {

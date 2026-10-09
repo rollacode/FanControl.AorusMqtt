@@ -119,7 +119,12 @@ function Wait-MaintReady {
     $deadline=[DateTime]::UtcNow.AddSeconds(30)
     do {
         $receipt=Read-MaintJson (Join-Path $maintData 'diagnostic-snapshot.json')
-        if((Is-MaintFresh $receipt) -and $receipt.snapshot.controlReady -and @(Get-MaintHosts).Count -eq 1) {
+        $currentHosts=@(Get-MaintHosts)
+        # A fresh receipt from the previous process can survive a fast restart.
+        # Accept readiness only after this host has actually produced a sample.
+        $fromCurrentHost=$currentHosts.Count -eq 1 -and $receipt -and $receipt.sampledAt -and
+            ([DateTimeOffset]$receipt.sampledAt -ge [DateTimeOffset]$currentHosts[0].CreationDate)
+        if((Is-MaintFresh $receipt) -and $receipt.snapshot.controlReady -and $fromCurrentHost) {
             $cpu=Read-MaintJson (Join-Path $maintData 'cpu-performance-status.json')
             return @{controlReady=$true;observedProfile=$receipt.snapshot.bridge.observedProfile;mqtt=$receipt.snapshot.mqttConnectionState;cpuFresh=(Is-MaintFresh $cpu);boost=$cpu.boost}
         }
